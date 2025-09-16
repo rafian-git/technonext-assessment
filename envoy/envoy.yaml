@@ -1,0 +1,58 @@
+static_resources:
+  listeners:
+  - name: listener_http
+    address:
+      socket_address: { address: 0.0.0.0, port_value: 8080 }
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: ingress_http
+          codec_type: AUTO
+          route_config:
+            name: local_route
+            virtual_hosts:
+            - name: backend
+              domains: ["*"]
+              routes:
+              - match: { prefix: "/" }
+                route: { cluster: grpc_service, timeout: 60s }
+          http_filters:
+            - name: envoy.filters.http.grpc_json_transcoder
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.http.grpc_json_transcoder.v3.GrpcJsonTranscoder
+                proto_descriptor: "/etc/envoy/api_descriptor.pb"
+                services: [ "orders.v1.AuthService", "orders.v1.OrderService" ]
+                convert_grpc_status: true
+                print_options:
+                  add_whitespace: false
+                  always_print_primitive_fields: false
+                  always_print_enums_as_ints: false
+                  preserve_proto_field_names: false
+            - name: envoy.filters.http.cors
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
+            - name: envoy.filters.http.router
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  clusters:
+  - name: grpc_service
+    connect_timeout: 1s
+    type: logical_dns
+    lb_policy: round_robin
+    http2_protocol_options: {}
+    load_assignment:
+      cluster_name: grpc_service
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: app
+                port_value: 50051
+admin:
+  access_log_path: "/tmp/admin_access.log"
+  address:
+    socket_address: { address: 0.0.0.0, port_value: 9901 }
